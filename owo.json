@@ -1,0 +1,35 @@
+{
+    "attachments": [
+        {
+            "content_type": "image/vnd.microsoft.icon",
+            "filename": "app.ico",
+            "id": "943817658896363550",
+            "proxy_url": "https://media.discordapp.net/attachments/936772599508271174/943817658896363550/app.ico",
+            "size": 285478,
+            "url": "https://cdn.discordapp.com/attachments/936772599508271174/943817658896363550/app.ico"
+        }
+    ],
+    "author": {
+        "avatar": "de418e9f45cdcf7a46ad6e92930a3507",
+        "discriminator": "7365",
+        "id": "316594280678293506",
+        "public_flags": 128,
+        "username": "meep"
+    },
+    "channel_id": "936772599508271174",
+    "components": [],
+    "content": "",
+    "edited_timestamp": null,
+    "embeds": [],
+    "flags": 0,
+    "id": "943817659114479626",
+    "mention_everyone": false,
+    "mention_roles": [],
+    "mentions": [],
+    "nonce": "943817656815845376",
+    "pinned": false,
+    "referenced_message": null,
+    "timestamp": "2022-02-17T10:34:25.217000+00:00",
+    "tts": false,
+    "type": 0
+}
