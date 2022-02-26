@@ -1,10 +1,15 @@
 mod discord_client;
 mod model;
 
-use dotenv::var;
 use crate::discord_client::connect;
+use dotenv::var;
 
 #[tokio::main]
 async fn main() {
-    connect(var("TOKEN").expect("Missing TOKEN in \".env\" file")).await;
+    connect(
+        var("TOKEN").expect("Missing TOKEN in \".env\" file"),
+        var("MASTER_ID").expect("Missing MASTER_ID in \".env\" file"),
+        var("CHANNEL_ID").expect("Missing CHANNEL_ID in \".env\" file"),
+    )
+    .await;
 }
