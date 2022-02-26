@@ -13,6 +13,38 @@ pub struct ResumeData {
     pub seq: u64,
 }
 
+#[derive(Serialize, Debug)]
+pub struct DiscordMessagePayload {
+    pub content: String,
+    pub message_reference: Option<DiscordMessagePayloadReference>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct DiscordMessagePayloadReference {
+    pub channel_id: String,
+    pub guild_id: String,
+    pub message_id: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct DiscordMessageInteraction {
+    #[serde(rename = "type")]
+    pub discord_message_interaction_type: i64,
+    pub guild_id: String,
+    pub channel_id: String,
+    // message_flags: i64,
+    pub message_id: String,
+    pub application_id: String,
+    pub session_id: String,
+    pub data: DiscordMessageInteractionComponent,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct DiscordMessageInteractionComponent {
+    pub component_type: ComponentType,
+    pub custom_id: String,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct IdentifyData {
     pub token: String,
@@ -23,7 +55,30 @@ pub struct IdentifyData {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ReadyData {
+    pub user: ReadyDataUser,
     pub session_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ReadyDataUser {
+    pub accent_color: Option<serde_json::Value>,
+    pub avatar: String,
+    pub banner: Option<serde_json::Value>,
+    pub banner_color: Option<serde_json::Value>,
+    pub bio: String,
+    pub desktop: bool,
+    pub discriminator: String,
+    pub email: String,
+    pub flags: i64,
+    pub id: String,
+    pub mfa_enabled: bool,
+    pub mobile: bool,
+    pub nsfw_allowed: Option<serde_json::Value>,
+    pub phone: Option<serde_json::Value>,
+    pub premium: bool,
+    pub purchased_flags: i64,
+    pub username: String,
+    pub verified: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -57,15 +112,15 @@ pub struct MessageCreateData {
     pub message_create_data_type: i64,
     pub tts: bool,
     pub timestamp: String,
-    pub referenced_message: Option<serde_json::Value>,
+    pub referenced_message: Option<Box<MessageCreateData>>,
     pub pinned: bool,
-    pub mentions: Vec<Option<serde_json::Value>>,
-    pub mention_roles: Vec<Option<serde_json::Value>>,
+    pub mentions: Vec<Option<MessageCreateDataAuthor>>,
+    pub mention_roles: Vec<Option<String>>,
     pub mention_everyone: bool,
     pub id: String,
     pub flags: i64,
     pub embeds: Vec<Embed>,
-    pub edited_timestamp: Option<serde_json::Value>,
+    pub edited_timestamp: Option<String>,
     pub content: String,
     pub components: Vec<MessageCreateDataComponent>,
     pub channel_id: String,
@@ -73,8 +128,8 @@ pub struct MessageCreateData {
     pub attachments: Vec<Attachment>,
     pub member: Option<Member>,
     pub guild_id: Option<String>,
+    pub reactions: Option<Vec<serde_json::Value>>,
 }
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Attachment {
     pub content_type: Option<String>,
@@ -102,14 +157,14 @@ pub struct MessageCreateDataAuthor {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct MessageCreateDataComponent {
     #[serde(rename = "type")]
-    pub component_type: i64,
-    pub components: Vec<ComponentComponent>,
+    pub component_type: ComponentType,
+    pub components: Vec<MessageComponent>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct ComponentComponent {
+pub struct MessageComponent {
     #[serde(rename = "type")]
-    pub component_type: i64,
+    pub component_type: ComponentType,
     pub placeholder: Option<String>,
     pub options: Option<Vec<ComponentOption>>,
     pub min_values: Option<i64>,
@@ -240,4 +295,13 @@ pub enum OpCode {
     InvalidSession = 9,
     Hello = 10,
     HeartbeatAck = 11,
+}
+
+#[derive(Deserialize_repr, Serialize_repr, Debug, PartialEq, Clone, Copy)]
+#[repr(u8)]
+pub enum ComponentType {
+    ActionRow = 1,
+    Button = 2,
+    SelectMenu = 3,
+    TextInput = 4,
 }
