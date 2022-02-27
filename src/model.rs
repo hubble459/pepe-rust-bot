@@ -59,7 +59,7 @@ pub struct ReadyData {
     pub session_id: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ReadyDataUser {
     pub accent_color: Option<serde_json::Value>,
     pub avatar: String,
@@ -276,9 +276,12 @@ where
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Package {
     pub op: OpCode,
-    pub s: Option<u64>,
-    pub t: Option<String>,
-    pub d: Option<serde_json::Value>,
+    #[serde(rename = "s")]
+    pub sequence: Option<u64>,
+    #[serde(rename = "t")]
+    pub tag: Option<String>,
+    #[serde(rename = "d")]
+    pub data: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize_repr, Serialize_repr, Debug, Clone, Copy)]
