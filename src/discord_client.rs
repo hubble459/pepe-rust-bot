@@ -1,6 +1,6 @@
 extern crate futures;
 
-use crate::discord_commands::get_commands;
+use crate::discord_commands;
 use crate::discord_commands::Command;
 use crate::discord_message::*;
 use crate::model::*;
@@ -16,7 +16,10 @@ use serde::Serialize;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
+use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite::Message;
+
+use log::{debug, error, info};
 
 fn make_http_client(token: &String) -> Client {
     let mut headers = HeaderMap::new();
@@ -26,7 +29,7 @@ fn make_http_client(token: &String) -> Client {
     Client::builder().default_headers(headers).build().unwrap()
 }
 
-pub async fn connect(token: String, master_id: String, channel_id: String) {
+pub async fn connect(token: String, master_id: String) {
     let (stream, _) = tokio_tungstenite::connect_async_tls_with_config(
         "wss://gateway.discord.gg/?v=9&encoding=json",
         None,
@@ -34,9 +37,14 @@ pub async fn connect(token: String, master_id: String, channel_id: String) {
     )
     .await
     .expect("Failed to connect with the Discord Gateway");
+
+    info!("Connected to the Discord WebSocket");
+
     let (sink, stream) = stream.split();
     let (message_update_sender, message_update_receiver) =
         async_channel::unbounded::<DiscordMessage>();
+    let (master_command_sender, master_command_receiver) =
+        async_channel::unbounded::<MasterCommand>();
 
     let discord_client = DiscordClient {
         http: make_http_client(&token),
@@ -46,53 +54,84 @@ pub async fn connect(token: String, master_id: String, channel_id: String) {
         user: None,
         sequence: 0,
         websocket_writer: sink,
+        message_update_receiver,
+        master_command_sender,
+        commands: discord_commands::get_commands(),
     };
 
     let shared_client: SharedDiscordClient = Arc::new(Mutex::new(discord_client));
     let shared_client_clone = shared_client.clone();
 
-    let mut interval = tokio::time::interval(Duration::from_secs(2));
-    let mut commands: Vec<Command> = get_commands()
-        .into_iter()
-        .filter(|c| c.command.is_some())
-        .collect();
-    let commands_length = commands.len();
-
     let command_loop = tokio::spawn(async move {
-        interval.tick().await;
+        let mut tokio_thread: Option<JoinHandle<()>> = None;
+
         loop {
-            interval.tick().await;
-            let mut command = &mut commands[rand::thread_rng().gen_range(0..commands_length)];
-            if command.last_called.is_none()
-                || command.last_called.unwrap().elapsed() >= command.cooldown
-            {
-                command.last_called = Some(Instant::now());
-                let command_content = command.command.as_ref().unwrap().to_string();
-                shared_client
-                    .clone()
-                    .lock()
-                    .await
-                    .http
-                    .post(format!(
-                        "https://discord.com/api/v9/channels/{}/messages",
-                        channel_id.to_string()
-                    ))
-                    .body(
-                        serde_json::to_string(&DiscordMessagePayload {
-                            content: command_content,
-                            message_reference: None,
-                        })
-                        .unwrap(),
-                    )
-                    .send()
-                    .await
-                    .unwrap();
+            let master_command = master_command_receiver.recv().await.unwrap();
+            let is_running = &tokio_thread.is_some() == &true;
+
+            match master_command.command {
+                MasterCommandType::Start => {
+                    let channel_id = master_command.tag.unwrap().to_string();
+                    let mut interval = tokio::time::interval(Duration::from_secs(2));
+                    let shared_client_1 = shared_client.clone();
+                    let shared_client_2 = shared_client.clone();
+                    let cmd_client = shared_client_1.lock().await;
+                    let mut runnable_commands = cmd_client
+                        .commands
+                        .clone()
+                        .into_iter()
+                        .filter(|c| c.command.is_some())
+                        .collect::<Vec<Command>>();
+                    let commands_length = runnable_commands.len();
+
+                    if !is_running {
+                        tokio_thread = Some(tokio::spawn(async move {
+                            interval.tick().await;
+                            loop {
+                                interval.tick().await;
+                                let mut command = &mut runnable_commands
+                                    [rand::thread_rng().gen_range(0..commands_length)];
+                                if command.last_called.is_none()
+                                    || command.last_called.unwrap().elapsed() >= command.cooldown
+                                {
+                                    command.last_called = Some(Instant::now());
+                                    let command_content =
+                                        command.command.as_ref().unwrap().to_string();
+                                    shared_client_2
+                                        .clone()
+                                        .lock()
+                                        .await
+                                        .http
+                                        .post(format!(
+                                            "https://discord.com/api/v9/channels/{}/messages",
+                                            channel_id.to_string()
+                                        ))
+                                        .body(
+                                            serde_json::to_string(&DiscordMessagePayload {
+                                                content: command_content,
+                                                message_reference: None,
+                                            })
+                                            .unwrap(),
+                                        )
+                                        .send()
+                                        .await
+                                        .unwrap();
+                                }
+                            }
+                        }));
+                    }
+                }
+                MasterCommandType::Stop => {
+                    if is_running {
+                        tokio_thread.as_ref().unwrap().abort();
+                        tokio_thread = None;
+                    }
+                }
             }
         }
     });
 
     let message_handler = stream.for_each(|result| async {
-        let mur = message_update_receiver.clone();
         let mus = message_update_sender.clone();
         match result {
             Ok(message) => match &message {
@@ -102,34 +141,35 @@ pub async fn connect(token: String, master_id: String, channel_id: String) {
                         Ok(package) => {
                             let scc = shared_client_clone.clone();
                             tokio::spawn(async move {
-                                handle_ws_package(scc.clone(), package, mur, mus).await;
+                                handle_ws_package(scc.clone(), package, mus).await;
                             });
                         }
                         Err(error) => {
-                            println!("Not JSON: {:#?}", json);
-                            println!("Error: {:#?}", error);
+                            error!("Not JSON: {:#?}", json);
+                            error!("Error: {:#?}", error);
                         }
                     }
                 }
                 _else => {
-                    println!("Received Unknown Message: {:#?}", message);
+                    error!("Received Unknown Message: {:#?}", message);
                 }
             },
             Err(error) => {
-                println!("Error Occurred: {:#?}", error);
+                error!("Error Occurred: {:#?}", error);
             }
         }
     });
 
     pin_mut!(message_handler);
+    // pin_mut!(command_loop);
     futures::future::select(message_handler, command_loop).await;
+    // message_handler.await;
 }
 
 /// Handles a Discord WebSocket Package
 async fn handle_ws_package(
     shared_client: SharedDiscordClient,
     package: Package,
-    message_update_receiver: async_channel::Receiver<DiscordMessage>,
     message_update_sender: async_channel::Sender<DiscordMessage>,
 ) {
     // Set the sequence if there is one in the package
@@ -139,12 +179,12 @@ async fn handle_ws_package(
     }
 
     // Log the Package
-    // println!(
-    //     "{:?}. {:?}, has_data: {}",
-    //     shared_client.clone().lock().await.sequence,
-    //     package.op,
-    //     package.data.is_some()
-    // );
+    debug!(
+        "{:?}. {:?}, has_data: {}",
+        shared_client.clone().lock().await.sequence,
+        package.op,
+        package.data.is_some()
+    );
 
     match &package.op {
         OpCode::Hello => {
@@ -211,54 +251,38 @@ async fn handle_ws_package(
                 "MESSAGE_CREATE" => {
                     // write_to_json(&data, "message_create.json");
 
-                    let c_client = shared_client.clone();
-                    let client = c_client.lock().await;
-                    // let json_string = json_data.to_string();
                     let data = serde_json::from_value::<MessageCreateData>(json_data);
                     match data {
                         Ok(data) => {
-                            let message: DiscordMessage = DiscordMessage {
-                                data,
-                                user: client.user.as_ref().unwrap().clone(),
-                                client: shared_client.clone(),
-                                message_update_receiver,
-                            };
+                            let message: DiscordMessage =
+                                DiscordMessage::new(data, shared_client.clone()).await;
+                            let client = shared_client.clone();
+                            let client = client.lock().await;
 
-                            tokio::spawn(async move {
-                                let commands = get_commands();
+                            let commands = client.commands.clone();
+                            drop(client);
 
-                                // Get command handler
-                                let handler = commands
-                                    .into_iter()
-                                    .find(|handler| (handler.matcher)(&message));
-                                match handler {
-                                    Some(handler) => {
-                                        let result = (handler.execute)(&message).await;
-                                        match result {
-                                            Ok(()) => {}
-                                            Err(error) => println!("Error in Command {:#?}", error),
-                                        }
-                                    }
-                                    None => {}
+                            // Get command handler
+                            let handlers = commands
+                                .into_iter()
+                                .filter(|handler| (handler.matcher)(&message));
+                            for handler in handlers {
+                                let result = (handler.execute)(&message).await;
+                                match result {
+                                    Ok(()) => {}
+                                    Err(error) => error!("Error in Command {:#?}", error),
                                 }
-                            });
+                            }
                         }
                         Err(error) => {
-                            // println!("Error: {:#?}", json_string);
-                            println!("Error: {:#?}", error);
+                            error!("Error: {:#?}", error);
                         }
                     }
                 }
                 "MESSAGE_UPDATE" => {
-                    let c_client = shared_client.clone();
-                    let client = c_client.lock().await;
                     let data: MessageCreateData = serde_json::from_value(json_data).unwrap();
-                    let message: DiscordMessage = DiscordMessage {
-                        data,
-                        user: client.user.as_ref().unwrap().clone(),
-                        client: shared_client.clone(),
-                        message_update_receiver: message_update_receiver.clone(),
-                    };
+                    let message: DiscordMessage = DiscordMessage::new(data, shared_client).await;
+
                     message_update_sender.clone().send(message).await.unwrap();
                 }
                 "SESSION_REPLACE" => {}
@@ -266,19 +290,16 @@ async fn handle_ws_package(
                 "SESSIONS_REPLACE" => {}
                 "INTERACTION_CREATE" => {}
                 "INTERACTION_SUCCESS" => {}
-                _ => println!("Unhandled event: {}", event),
+                "MESSAGE_ACK" => {}
+                _ => debug!("Unhandled event: {}", event),
             }
         }
-        _other => println!("Unhandled OpCode: {:?}", package.op),
+        _other => debug!("Unhandled OpCode: {:?}", package.op),
     }
 }
 
 async fn get_sequence(shared_client: &SharedDiscordClient) -> u64 {
     shared_client.clone().lock().await.sequence
-}
-
-async fn get_session_id(shared_client: &SharedDiscordClient) -> String {
-    shared_client.clone().lock().await.session_id.to_string()
 }
 
 async fn get_token(shared_client: &SharedDiscordClient) -> String {

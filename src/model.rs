@@ -5,6 +5,23 @@ fn default_as_false() -> bool {
     false
 }
 
+fn default_empty_array<T>() -> Vec<T> {
+    vec![]
+}
+
+#[derive(Debug)]
+pub struct MasterCommand {
+    pub command: MasterCommandType,
+    pub tag: Option<String>,
+}
+
+#[repr(u8)]
+#[derive(Debug)]
+pub enum MasterCommandType {
+    Start,
+    Stop,
+}
+
 #[derive(Deserialize, Serialize, Debug)]
 pub struct HelloData {
     pub heartbeat_interval: u64,
@@ -30,7 +47,7 @@ pub struct DiscordMessagePayloadReference {
     pub message_id: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize)]
 pub struct DiscordMessageInteraction {
     #[serde(rename = "type")]
     pub discord_message_interaction_type: i64,
@@ -43,10 +60,13 @@ pub struct DiscordMessageInteraction {
     pub data: DiscordMessageInteractionComponent,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize)]
 pub struct DiscordMessageInteractionComponent {
     pub component_type: ComponentType,
     pub custom_id: String,
+    #[serde(rename = "type")]
+    pub type_type: Option<u8>,
+    pub values: Option<Vec<String>>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -118,7 +138,7 @@ pub struct MessageCreateData {
     pub timestamp: String,
     pub referenced_message: Option<Box<MessageCreateData>>,
     pub pinned: bool,
-    pub mentions: Vec<Option<MessageCreateDataAuthor>>,
+    pub mentions: Vec<MessageCreateDataAuthor>,
     pub mention_roles: Vec<Option<String>>,
     pub mention_everyone: bool,
     pub id: String,
@@ -165,28 +185,30 @@ pub struct MessageCreateDataComponent {
     pub components: Vec<MessageComponent>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MessageComponent {
     #[serde(rename = "type")]
     pub component_type: ComponentType,
     pub placeholder: Option<String>,
-    pub options: Option<Vec<ComponentOption>>,
+    #[serde(default = "default_empty_array")]
+    pub options: Vec<ComponentOption>,
     pub min_values: Option<i64>,
     pub max_values: Option<i64>,
-    pub custom_id: String,
+    pub label: Option<String>,
+    pub custom_id: Option<String>,
     pub style: Option<i64>,
     pub emoji: Option<Emoji>,
     #[serde(default = "default_as_false")]
     pub disabled: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Emoji {
     pub name: String,
     pub id: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ComponentOption {
     pub value: String,
     pub label: String,

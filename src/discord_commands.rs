@@ -1,12 +1,16 @@
 use std::{
     error::Error,
+    ops::Range,
     time::{Duration, Instant},
 };
 
 use futures::future::BoxFuture;
 use regex::Regex;
 
-use crate::discord_message::DiscordMessage;
+use crate::{
+    discord_message::DiscordMessage,
+    model::{MasterCommand, MasterCommandType},
+};
 
 #[derive(Clone)]
 pub struct Command {
@@ -20,13 +24,66 @@ pub struct Command {
 
 pub fn get_commands() -> Vec<Command> {
     vec![
+        // Master Controls
+        Command {
+            last_called: None,
+            command: None,
+            cooldown: Duration::default(),
+            matcher: |message| {
+                message.is_from_master()
+                    && message
+                        .data
+                        .content
+                        .starts_with(&format!("<@!{}> ", message.user.id))
+            },
+            execute: |message| {
+                Box::pin(async {
+                    let parts = message.data.content.split_once(" ");
+                    if parts.is_some() {
+                        let (_mention, command) = parts.unwrap();
+                        match command {
+                            "start" => {
+                                message
+                                    .client
+                                    .clone()
+                                    .lock()
+                                    .await
+                                    .master_command_sender
+                                    .send(MasterCommand {
+                                        command: MasterCommandType::Start,
+                                        tag: Some(message.data.channel_id.to_string()),
+                                    })
+                                    .await?;
+                            }
+                            "stop" => {
+                                message
+                                    .client
+                                    .clone()
+                                    .lock()
+                                    .await
+                                    .master_command_sender
+                                    .send(MasterCommand {
+                                        command: MasterCommandType::Stop,
+                                        tag: None,
+                                    })
+                                    .await?;
+                            }
+                            _ => {
+                                message.reply(":pleading_face:").await?;
+                            }
+                        }
+                    }
+                    Ok(())
+                })
+            },
+        },
         // High Low
         Command {
             last_called: None,
             command: Some(String::from("pls hl")),
             cooldown: Duration::from_secs(30),
             matcher: |message| {
-                message.is_pepe_bot()
+                message.is_from_pepe()
                     && message.replied_to_me("pls hl")
                     && message.embed_author_contains("high-low")
             },
@@ -49,7 +106,7 @@ pub fn get_commands() -> Vec<Command> {
             command: Some(String::from("pls hunt")),
             cooldown: Duration::from_secs(40),
             matcher: |message| {
-                message.is_pepe_bot()
+                message.is_from_pepe()
                     && message.replied_to_me("pls hunt")
                     && message.data.content.starts_with("Dodge the Fireball")
             },
@@ -77,7 +134,7 @@ pub fn get_commands() -> Vec<Command> {
             command: Some(String::from("pls fish")),
             cooldown: Duration::from_secs(40),
             matcher: |message| {
-                message.is_pepe_bot()
+                message.is_from_pepe()
                     && message.replied_to_me("pls fish")
                     && message.data.content.starts_with("Catch the fish!")
             },
@@ -125,21 +182,37 @@ pub fn get_commands() -> Vec<Command> {
             matcher: |_message| false,
             execute: |_message| Box::pin(async { Ok(()) }),
         },
+        // Trivia
+        Command {
+            last_called: None,
+            command: Some(String::from("pls trivia")),
+            cooldown: Duration::from_secs(5),
+            matcher: |message| {
+                message.is_from_pepe()
+                    && message.replied_to_me("pls trivia")
+                    && message.embed_author_contains("trivia question")
+            },
+            execute: |message| {
+                Box::pin(async {
+                    message.click_button(0, random_range(0..4)).await?;
+                    Ok(())
+                })
+            },
+        },
         // Post Memes
         Command {
             last_called: None,
             command: Some(String::from("pls pm")),
             cooldown: Duration::from_secs(30),
             matcher: |message| {
-                message.is_pepe_bot()
+                message.is_from_pepe()
                     && message.replied_to_me("pls pm")
                     && message.embed_author_contains("meme posting")
             },
             execute: |message| {
                 Box::pin(async {
-                    let random = (rand::random::<f32>() * 5f32).floor() as usize;
-                    message.click_button(0, random).await?;
-                    let updated = message.wait_update().await?;
+                    message.click_button(0, random_range(0..5)).await?;
+                    let updated = message.await_update().await?;
                     if updated.embed_description_contains("**Laptop** is broken") {
                         updated.send("pls buy laptop").await?;
                     }
@@ -148,46 +221,73 @@ pub fn get_commands() -> Vec<Command> {
             },
         },
         // Stream
-        // Command {
-        //     last_called: None,
-        //     command: Some(String::from("pls stream")),
-        //     cooldown: Duration::from_secs(60 * 5),
-        //     matcher: |message| {
-        //         message.is_pepe_bot()
-        //             && message.embed_author_contains(&format!(
-        //                 "{}'s Stream Manager",
-        //                 message.user.username
-        //             ))
-        //     },
-        //     execute: |message| {
-        //         Box::pin(async {
-        //             let button = message.get_button(0, 0);
-        //             match button {
-        //                 Some(button) => {
-        //                     // Start Stream
-        //                     if button.disabled == true {
-        //                         // can't stream
-        //                     } else {
-        //                         // click start
-        //                         // await update
-        //                         // choose game
-        //                         // await update
-        //                         // click start
-        //                         // then same as in None case
-        //                     }
-        //                 }
-        //                 None => {
-        //                     // Streaming
-        //                     // random 0..3
-        //                     // 0 ad
-        //                     // 1 read
-        //                     // 2 donations
-        //                 }
-        //             }
-        //             Ok(())
-        //         })
-        //     },
-        // },
+        Command {
+            last_called: None,
+            command: Some(String::from("pls stream")),
+            cooldown: Duration::from_secs(60 * 5),
+            matcher: |message| {
+                message.is_from_pepe()
+                    && message.embed_author_contains(&format!(
+                        "{}'s Stream Manager",
+                        message.user.username
+                    ))
+            },
+            execute: |message| {
+                Box::pin(async {
+                    let button = message.get_component(0, 0);
+                    match button {
+                        Some(button) => {
+                            match button.label.unwrap().as_str() {
+                                "Go Live" => {
+                                    // Start Stream
+                                    if !button.disabled {
+                                        // click start
+                                        message.click_button(0, 0).await?;
+                                        // await update
+                                        let updated_message = message.await_update().await?;
+                                        // choose game
+                                        let game_row = updated_message.get_component(0, 0).unwrap();
+                                        updated_message
+                                            .select_option(
+                                                0,
+                                                random_range(0..game_row.options.len()),
+                                            )
+                                            .await?;
+                                        // await update
+                                        let updated_message_two = message.await_update().await?;
+                                        // click start
+                                        updated_message_two.click_button(1, 0).await?;
+                                        // await update
+                                        let updated_message_three =
+                                            updated_message_two.await_update().await?;
+                                        // click one of the stream buttons
+                                        updated_message_three
+                                            .click_button(0, random_range(0..3))
+                                            .await?;
+                                        // end interaction
+                                        updated_message_three.click_button(1, 1).await?;
+                                    } else {
+                                        // can't stream
+                                        message.click_button(0, 2).await?;
+
+                                    }
+                                }
+                                "Run AD" => {
+                                    // Is Streaming
+                                    if !button.disabled {
+                                        message.click_button(0, random_range(0..3)).await?;
+                                    }
+                                    message.click_button(1, 1).await?;
+                                }
+                                _ => {}
+                            }
+                        }
+                        None => {}
+                    }
+                    Ok(())
+                })
+            },
+        },
         // Work
         // Command {
         //     last_called: None,
@@ -213,4 +313,8 @@ pub fn get_commands() -> Vec<Command> {
             execute: |_message| Box::pin(async { Ok(()) }),
         },
     ]
+}
+
+fn random_range(range: Range<usize>) -> usize {
+    (rand::random::<f32>() * range.end as f32).floor() as usize + range.start
 }
