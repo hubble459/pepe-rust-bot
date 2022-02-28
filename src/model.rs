@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
+fn default_as_false() -> bool {
+    false
+}
+
 #[derive(Deserialize, Serialize, Debug)]
 pub struct HelloData {
     pub heartbeat_interval: u64,
@@ -172,7 +176,8 @@ pub struct MessageComponent {
     pub custom_id: String,
     pub style: Option<i64>,
     pub emoji: Option<Emoji>,
-    pub disabled: Option<bool>,
+    #[serde(default = "default_as_false")]
+    pub disabled: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

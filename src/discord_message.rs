@@ -1,5 +1,6 @@
 use futures::lock::Mutex;
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
+use tokio::time::timeout;
 
 use reqwest::Client;
 
@@ -13,7 +14,6 @@ pub struct DiscordClient {
     pub sequence: u64,
     pub session_id: String,
     pub master_id: String,
-    // pub message_receiver: std::sync::mpsc::Receiver<DiscordMessage>,
     pub http: Client,
     pub websocket_writer: futures::stream::SplitSink<
         tokio_tungstenite::WebSocketStream<
@@ -21,8 +21,6 @@ pub struct DiscordClient {
         >,
         tokio_tungstenite::tungstenite::Message,
     >,
-    pub message_receiver: crossbeam_channel::Receiver<DiscordMessage>,
-    pub message_sender: crossbeam_channel::Sender<DiscordMessage>,
 }
 
 pub type SharedDiscordClient = Arc<Mutex<DiscordClient>>;
@@ -31,6 +29,7 @@ pub struct DiscordMessage {
     pub user: ReadyDataUser,
     pub data: MessageCreateData,
     pub client: SharedDiscordClient,
+    pub message_update_receiver: async_channel::Receiver<DiscordMessage>,
 }
 
 impl DiscordMessage {
@@ -43,6 +42,10 @@ impl DiscordMessage {
             Some(ref_msg) => ref_msg.author.id == self.user.id && ref_msg.content == content,
             None => false,
         }
+    }
+
+    pub fn get_button(&self, row: usize, column: usize) -> Option<MessageComponent> {
+        None
     }
 
     pub fn embed_title_contains(&self, content: &str) -> bool {
@@ -79,18 +82,20 @@ impl DiscordMessage {
                 .contains(&content.to_lowercase());
     }
 
-    pub async fn click_button(&self, row: usize, column: usize) {
+    pub async fn click_button(
+        &self,
+        row: usize,
+        column: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         if row >= self.data.components.len() {
-            return;
+            return Ok(());
         }
         let row = &self.data.components[row];
         if column >= row.components.len() {
-            return;
+            return Ok(());
         }
         let button = &row.components[column];
-        if button.component_type == ComponentType::Button
-            && (button.disabled.is_none() || button.disabled == Some(false))
-        {
+        if button.component_type == ComponentType::Button && button.disabled == false {
             let client_c = self.client.clone();
             let client = client_c.lock().await;
             let body = serde_json::to_string(&DiscordMessageInteraction {
@@ -104,20 +109,19 @@ impl DiscordMessage {
                     component_type: button.component_type,
                     custom_id: button.custom_id.to_string(),
                 },
-            })
-            .unwrap();
+            })?;
             let http = client.http.clone();
             drop(client);
 
             http.post("https://discord.com/api/v9/interactions")
                 .body(body)
                 .send()
-                .await
-                .unwrap();
+                .await?;
         }
+        Ok(())
     }
 
-    pub async fn reply(&self, content: &str) -> DiscordMessage {
+    pub async fn reply(&self, content: &str) -> Result<DiscordMessage, Box<dyn std::error::Error>> {
         let response = self
             .client
             .clone()
@@ -140,16 +144,17 @@ impl DiscordMessage {
                 .unwrap(),
             )
             .send()
-            .await
-            .unwrap();
-        return DiscordMessage {
+            .await?;
+
+        return Ok(DiscordMessage {
             user: self.user.clone(),
             data: serde_json::from_str(&response.text().await.unwrap()).unwrap(),
             client: self.client.clone(),
-        };
+            message_update_receiver: self.message_update_receiver.clone(),
+        });
     }
 
-    pub async fn send(&self, content: &str) -> DiscordMessage {
+    pub async fn send(&self, content: &str) -> Result<DiscordMessage, Box<dyn std::error::Error>> {
         let response = self
             .client
             .clone()
@@ -168,13 +173,13 @@ impl DiscordMessage {
                 .unwrap(),
             )
             .send()
-            .await
-            .unwrap();
-        return DiscordMessage {
+            .await?;
+        return Ok(DiscordMessage {
             user: self.user.clone(),
             data: serde_json::from_str(&response.text().await.unwrap()).unwrap(),
             client: self.client.clone(),
-        };
+            message_update_receiver: self.message_update_receiver.clone(),
+        });
     }
 
     pub async fn edit(&self, content: &str) -> DiscordMessage {
@@ -207,27 +212,27 @@ impl DiscordMessage {
             user: self.user.clone(),
             data: serde_json::from_str(&response.text().await.unwrap()).unwrap(),
             client: self.client.clone(),
+            message_update_receiver: self.message_update_receiver.clone(),
         };
     }
 
-    pub async fn wait_update(&self) -> DiscordMessage {
+    pub async fn wait_update(&self) -> Result<DiscordMessage, Box<dyn std::error::Error>> {
+        let receiver = self.message_update_receiver.clone();
         loop {
-            let client_c = self.client.clone();
-            let client = client_c.lock().await;
-            println!("wu: got client");
-            let receiver = client.message_receiver.clone();
-            println!("wu: got receiver");
-            let message = receiver.recv();
-            match message {
-                Ok(message) => {
-                    println!("got {}", message.data.id);
-
-                    if message.data.id == self.data.id {
-                        break message;
+            let result1 = timeout(Duration::from_secs(10), receiver.recv()).await;
+            match result1 {
+                Ok(result2) => match result2 {
+                    Ok(message) => {
+                        if message.data.id == self.data.id {
+                            break Ok(message);
+                        }
                     }
-                }
+                    Err(e) => {
+                        break Err(Box::new(e));
+                    }
+                },
                 Err(e) => {
-                    println!("got error: {:#?}", e);
+                    break Err(Box::new(e));
                 }
             }
         }

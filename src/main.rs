@@ -1,9 +1,9 @@
-mod discord_client_sync;
+mod discord_client;
 mod discord_commands;
 mod discord_message;
 mod model;
 
-use crate::discord_client_sync::connect;
+use crate::discord_client::connect;
 use dotenv::var;
 
 #[tokio::main]
