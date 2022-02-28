@@ -10,7 +10,7 @@ use clap::Parser;
 
 /// Automate Dank Memer
 #[derive(Parser, Debug)]
-#[clap(author = "meep334 <geraldd459@gmail.com>", version = "0.1", about = "Automate the Dank Memer game by using a discord self bot", long_about = None)]
+#[clap(author = "meep334 <geraldd459@gmail.com>", version = "1.0", about = "Automate the Dank Memer game by using a discord self bot", long_about = None)]
 struct Args {
     #[clap(flatten)]
     verbose: clap_verbosity_flag::Verbosity,
