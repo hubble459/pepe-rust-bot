@@ -224,7 +224,7 @@ pub fn get_commands() -> Vec<Command> {
         Command {
             last_called: None,
             command: Some(String::from("pls stream")),
-            cooldown: Duration::from_secs(60 * 5),
+            cooldown: Duration::from_secs(60 * 10),
             matcher: |message| {
                 message.is_from_pepe()
                     && message.embed_author_contains(&format!(
