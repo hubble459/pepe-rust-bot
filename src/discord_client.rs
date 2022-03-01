@@ -5,6 +5,7 @@ use crate::discord_commands::Command;
 use crate::discord_message::*;
 use crate::model::*;
 
+use async_recursion::async_recursion;
 use futures::lock::Mutex;
 use futures::pin_mut;
 use futures::SinkExt;
@@ -29,7 +30,8 @@ fn make_http_client(token: &String) -> Client {
     Client::builder().default_headers(headers).build().unwrap()
 }
 
-pub async fn connect(token: String, master_id: String) {
+#[async_recursion]
+pub async fn connect(token: String, master_id: String, channel_id: Option<String>) {
     let (stream, _) = tokio_tungstenite::connect_async_tls_with_config(
         "wss://gateway.discord.gg/?v=9&encoding=json",
         None,
@@ -46,20 +48,20 @@ pub async fn connect(token: String, master_id: String) {
     let (master_command_sender, master_command_receiver) =
         async_channel::unbounded::<MasterCommand>();
 
-    let discord_client = DiscordClient {
+    let shared_channel_id: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(channel_id.clone()));
+    let shared_channel_id_clone = shared_channel_id.clone();
+    let shared_client: SharedDiscordClient = Arc::new(Mutex::new(DiscordClient {
         http: make_http_client(&token),
-        master_id,
+        master_id: master_id.to_string(),
         session_id: "".to_owned(),
-        token,
+        token: token.to_string(),
         user: None,
         sequence: 0,
         websocket_writer: sink,
         message_update_receiver,
-        master_command_sender,
+        master_command_sender: master_command_sender.clone(),
         commands: discord_commands::get_commands(),
-    };
-
-    let shared_client: SharedDiscordClient = Arc::new(Mutex::new(discord_client));
+    }));
     let shared_client_clone = shared_client.clone();
 
     let command_loop = tokio::spawn(async move {
@@ -72,7 +74,8 @@ pub async fn connect(token: String, master_id: String) {
             match master_command.command {
                 MasterCommandType::Start => {
                     let channel_id = master_command.tag.unwrap().to_string();
-                    let mut interval = tokio::time::interval(Duration::from_secs(2));
+                    *shared_channel_id_clone.clone().lock().await = Some(channel_id.to_string());
+                    let mut interval = tokio::time::interval(Duration::from_secs(1));
                     let shared_client_1 = shared_client.clone();
                     let shared_client_2 = shared_client.clone();
                     let cmd_client = shared_client_1.lock().await;
@@ -85,6 +88,7 @@ pub async fn connect(token: String, master_id: String) {
                     let commands_length = runnable_commands.len();
 
                     if !is_running {
+                        info!("Running in {}", channel_id.to_string());
                         tokio_thread = Some(tokio::spawn(async move {
                             interval.tick().await;
                             loop {
@@ -160,10 +164,33 @@ pub async fn connect(token: String, master_id: String) {
         }
     });
 
+    // If channel id is known, start on this channel
+    if channel_id.is_some() {
+        master_command_sender
+            .clone()
+            .send(MasterCommand {
+                command: MasterCommandType::Start,
+                tag: Some(channel_id.unwrap()),
+            })
+            .await
+            .unwrap();
+    }
+
     pin_mut!(message_handler);
     // pin_mut!(command_loop);
     futures::future::select(message_handler, command_loop).await;
     // message_handler.await;
+
+    info!("Disconnected from the Discord Gateway");
+    info!("Trying to reconnect...");
+
+    // Disconnected so try to reconnect
+    connect(
+        token.to_owned(),
+        master_id.to_owned(),
+        shared_channel_id.lock().await.clone(),
+    )
+    .await;
 }
 
 /// Handles a Discord WebSocket Package
@@ -222,7 +249,9 @@ async fn handle_ws_package(
             )
             .await;
         }
-        OpCode::Resume => {
+        OpCode::Reconnect => {
+            debug!("Reconnect: {:#?}", package);
+
             let client = shared_client.clone();
             let client = client.lock().await;
 
@@ -240,7 +269,7 @@ async fn handle_ws_package(
             let json_data = package.data.unwrap();
             match event.as_str() {
                 "READY" => {
-                    // write_to_json(&data, "ready.json");
+                    // std::fs::write("data/ready.json", json_data.to_string()).expect("Unable to write file");
 
                     let ready: ReadyData = serde_json::from_value(json_data).unwrap();
                     let arc = shared_client.clone();
@@ -249,7 +278,7 @@ async fn handle_ws_package(
                     client.user = Some(ready.user);
                 }
                 "MESSAGE_CREATE" => {
-                    // write_to_json(&data, "message_create.json");
+                    // std::fs::write("data/message_create.json", json_data.to_string()).expect("Unable to write file");
 
                     let data = serde_json::from_value::<MessageCreateData>(json_data);
                     match data {

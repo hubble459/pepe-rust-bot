@@ -20,8 +20,12 @@ struct Args {
     token: String,
 
     /// The master of this bot (can control the bot)
-    #[clap(short, long, env, required = false)]
+    #[clap(short, long, env, default_value="")]
     master_id: String,
+
+    /// The default channel in which the bot runs
+    #[clap(short, long, env)]
+    channel_id: Option<String>,
 }
 
 #[tokio::main]
@@ -33,5 +37,5 @@ async fn main() {
         .filter_level(args.verbose.log_level_filter())
         .init();
 
-    connect(args.token, args.master_id).await;
+    connect(args.token, args.master_id, args.channel_id).await;
 }

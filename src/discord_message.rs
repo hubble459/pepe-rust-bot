@@ -4,7 +4,7 @@ use tokio::time::timeout;
 
 use reqwest::Client;
 
-use crate::{model::*, custom_error::MyError};
+use crate::{custom_error::MyError, model::*};
 
 const PEPE_ID: &str = "270904126974590976";
 
@@ -73,6 +73,10 @@ impl DiscordMessage {
 
     pub fn is_from_pepe(&self) -> bool {
         return self.is_from(PEPE_ID);
+    }
+
+    pub fn is_from_me(&self) -> bool {
+        return self.is_from(&self.user.id);
     }
 
     pub fn get_component(&self, row: usize, column: usize) -> Option<MessageComponent> {
@@ -158,6 +162,7 @@ impl DiscordMessage {
                 .send()
                 .await?;
         }
+        tokio::time::sleep(Duration::from_millis(200)).await;
         Ok(())
     }
 
@@ -205,6 +210,7 @@ impl DiscordMessage {
                 .send()
                 .await?;
         }
+        tokio::time::sleep(Duration::from_millis(200)).await;
         Ok(())
     }
 

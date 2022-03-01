@@ -5,6 +5,7 @@ use std::{
 };
 
 use futures::future::BoxFuture;
+use log::{debug, info};
 use regex::Regex;
 
 use crate::{
@@ -30,7 +31,7 @@ pub fn get_commands() -> Vec<Command> {
             command: None,
             cooldown: Duration::default(),
             matcher: |message| {
-                message.is_from_master()
+                (message.is_from_master() || message.is_from_me())
                     && message
                         .data
                         .content
@@ -94,7 +95,7 @@ pub fn get_commands() -> Vec<Command> {
                     let number_string = number_regex.captures(description).unwrap();
                     let number: u8 = number_string[1].parse().expect("not a number");
                     message
-                        .click_button(0, if number < 50 { 2 } else { 0 })
+                        .click_button(0, if number <= 50 { 2 } else { 0 })
                         .await?;
                     Ok(())
                 })
@@ -263,13 +264,13 @@ pub fn get_commands() -> Vec<Command> {
                                         // click one of the stream buttons
                                         updated_message_three
                                             .click_button(0, random_range(0..3))
-                                            .await?;
+                                            .await
+                                            .ok();
                                         // end interaction
                                         updated_message_three.click_button(1, 1).await?;
                                     } else {
                                         // can't stream
                                         message.click_button(0, 2).await?;
-
                                     }
                                 }
                                 "Run AD" => {
@@ -297,13 +298,28 @@ pub fn get_commands() -> Vec<Command> {
         //     execute: |_message| Box::pin(async {Ok(())}),
         // },
         // Pet
-        // Command {
-        //     last_called: None,
-        //     command: String::from("pls pet"),
-        //     cooldown: Duration::from_secs(3600),
-        //     matcher: |_message| false,
-        //     execute: |_message| Box::pin(async {Ok(())}),
-        // },
+        Command {
+            last_called: None,
+            command: Some(String::from("pls pet")),
+            cooldown: Duration::from_secs(60 * 20),
+            matcher: |message| {
+                let button = message.get_component(0, 0);
+                message.is_from_pepe()
+                    && message.embed_title_contains(message.user.username.as_str())
+                    && button.is_some()
+                    && button.unwrap().label.as_ref().unwrap() == "Feed"
+            },
+            execute: |message| {
+                Box::pin(async {
+                    for button_index in 0..3 {
+                        message.click_button(0, button_index).await?;
+                    }
+
+                    message.click_button(1, 4).await?;
+                    Ok(())
+                })
+            },
+        },
         // Daily
         Command {
             last_called: None,
@@ -311,6 +327,123 @@ pub fn get_commands() -> Vec<Command> {
             cooldown: Duration::from_secs(3600 * 24),
             matcher: |_message| false,
             execute: |_message| Box::pin(async { Ok(()) }),
+        },
+        // ## Mini Games ##
+        Command {
+            // Remember Words Order
+            last_called: None,
+            command: None,
+            cooldown: Duration::from_secs(0),
+            matcher: |message| {
+                message.is_from_pepe() && message.data.content.starts_with("Remember words order!")
+            },
+            execute: |message| {
+                Box::pin(async {
+                    let words = &message.data.content.split("\n").collect::<Vec<&str>>()[1..]
+                        .iter()
+                        .map(|word| word.replace("`", ""))
+                        .collect::<Vec<String>>();
+                    let updated = message.await_update().await?;
+                    if updated
+                        .data
+                        .content
+                        .starts_with(format!("<@!{}>", updated.user.id).as_str())
+                    {
+                        debug!("trying to solve word order");
+                        let row = &updated.data.components[0];
+                        for word in words {
+                            let pos = row
+                                .components
+                                .iter()
+                                .position(|button| button.label.as_ref().unwrap() == word)
+                                .unwrap();
+                            updated.click_button(0, pos).await?;
+                        }
+                    }
+                    Ok(())
+                })
+            },
+        },
+        Command {
+            // Emoji Match
+            last_called: None,
+            command: None,
+            cooldown: Duration::from_secs(0),
+            matcher: |message| {
+                message.is_from_pepe() && message.data.content.contains("Emoji Match")
+            },
+            execute: |message| {
+                Box::pin(async {
+                    let (_line, emoji) = message.data.content.split_once("\n").unwrap();
+                    let updated = message.await_update().await?;
+                    if updated
+                        .data
+                        .content
+                        .starts_with(format!("<@!{}>", updated.user.id).as_str())
+                    {
+                        info!("trying to solve Emoji Match");
+                        let mut buttons = updated.data.components[0].components.clone();
+                        buttons.extend(updated.data.components[1].components.clone());
+                        let pos = buttons
+                            .iter()
+                            .position(|button| button.emoji.as_ref().unwrap().name == emoji)
+                            .unwrap();
+                        updated
+                            .click_button(if pos > 4 { 1 } else { 0 }, pos % 5)
+                            .await?;
+                    }
+                    Ok(())
+                })
+            },
+        },
+        Command {
+            // Soccer
+            last_called: None,
+            command: None,
+            cooldown: Duration::from_secs(0),
+            matcher: |message| message.is_from_pepe() && message.data.content.contains("Soccer"),
+            execute: |message| {
+                Box::pin(async {
+                    // Bot can't know if the message is intended for the user, so it just clicks either way
+                    let levitate_line = message.data.content.split("\n").collect::<Vec<&str>>()[2];
+                    info!("trying to solve Soccer");
+                    message.click_button(
+                        0,
+                        if levitate_line.starts_with(":levitate:") {
+                            1
+                        } else {
+                            0
+                        },
+                    ).await?;
+
+                    Ok(())
+                })
+            },
+        },
+        // TODO: Color Match
+        // Events
+        Command {
+            // Attack the Boss
+            last_called: None,
+            command: None,
+            cooldown: Duration::from_secs(0),
+            matcher: |message| {
+                message.is_from_pepe()
+                    && message.data.content.starts_with("Attack the boss")
+                    && message.get_component(0, 0).is_some()
+            },
+            execute: |message| {
+                Box::pin(async {
+                    while {
+                        message.click_button(0, 0).await?;
+
+                        let updated = message.await_update().await?;
+                        let button = updated.get_component(0, 0);
+                        button.is_some() && !button.unwrap().disabled
+                    } {}
+                    Ok(())
+                })
+            },
         },
     ]
 }

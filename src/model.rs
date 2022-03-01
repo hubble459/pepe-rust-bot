@@ -86,7 +86,7 @@ pub struct ReadyData {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ReadyDataUser {
     pub accent_color: Option<serde_json::Value>,
-    pub avatar: String,
+    pub avatar: Option<String>,
     pub banner: Option<serde_json::Value>,
     pub banner_color: Option<serde_json::Value>,
     pub bio: String,
@@ -175,7 +175,7 @@ pub struct MessageCreateDataAuthor {
     pub id: String,
     pub discriminator: String,
     pub bot: Option<bool>,
-    pub avatar: String,
+    pub avatar: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
