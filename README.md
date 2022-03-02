@@ -16,7 +16,7 @@ Example
 pepe@dank:~$ pepe-bot -h
 ...omitted
 pepe@dank:~$ pepe-bot -V
-pepe-bot 1.0
+pepe-bot 1.1
 pepe@dank:~$ pepe-bot -m 000000000000000000 -t nHSdck.qwef-2c.wknefjqj -vvv
 [running output]
 ```
