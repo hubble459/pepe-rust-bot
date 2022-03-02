@@ -323,10 +323,18 @@ async fn handle_ws_package(
                     }
                 }
                 "MESSAGE_UPDATE" => {
-                    let data: MessageCreateData = serde_json::from_value(json_data).unwrap();
-                    let message: DiscordMessage = DiscordMessage::new(data, shared_client).await;
+                    match serde_json::from_value::<MessageCreateData>(json_data.clone()) {
+                        Ok(data) => {
+                            let message: DiscordMessage = DiscordMessage::new(data, shared_client).await;
 
-                    message_update_sender.clone().send(message).await.unwrap();
+                            message_update_sender.clone().send(message).await.unwrap();
+                        }
+                        Err(e) => {
+                            error!("Error: {:#?}", e);
+                            error!("Object: {:#?}", json_data);
+                        }
+                    };
+                    
                 }
                 "SESSION_REPLACE" => {}
                 "PRESENCE_UPDATE" => {}

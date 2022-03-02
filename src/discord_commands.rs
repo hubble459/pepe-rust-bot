@@ -5,7 +5,7 @@ use std::{
 };
 
 use futures::future::BoxFuture;
-use log::{debug, info};
+use log::debug;
 use regex::Regex;
 
 use crate::{
@@ -39,10 +39,12 @@ pub fn get_commands() -> Vec<Command> {
             },
             execute: |message| {
                 Box::pin(async {
-                    let parts = message.data.content.split_once(" ");
-                    if parts.is_some() {
-                        let (_mention, command) = parts.unwrap();
-                        match command {
+                    let parts = message.data.content.split(" ").collect::<Vec<&str>>();
+                    if parts.len() > 1 {
+                        let command = &parts[1];
+                        let other = if parts.len() > 2 { &parts[2..] } else { &[] };
+
+                        match *command {
                             "start" => {
                                 message
                                     .client
@@ -69,6 +71,9 @@ pub fn get_commands() -> Vec<Command> {
                                     })
                                     .await?;
                             }
+                            "say" => {
+                                message.send(&other.join(" ")).await?;
+                            }
                             _ => {
                                 message.reply(":pleading_face:").await?;
                             }
@@ -90,7 +95,10 @@ pub fn get_commands() -> Vec<Command> {
             },
             execute: |message| {
                 Box::pin(async {
-                    let description = message.data.embeds[0].description.as_ref().unwrap();
+                    let description = message.data.embeds[0]
+                        .description
+                        .as_ref()
+                        .ok_or("No description")?;
                     let number_regex = Regex::new(r"\*\*(\d+)\*\*").unwrap();
                     let number_string = number_regex.captures(description).unwrap();
                     let number: u8 = number_string[1].parse().expect("not a number");
@@ -142,13 +150,13 @@ pub fn get_commands() -> Vec<Command> {
             execute: |message| {
                 Box::pin(async {
                     let content = &message.data.content;
-                    let fireball_line: &str = content.split("\n").collect::<Vec<&str>>()[1];
+                    let kraken_line: &str = content.split("\n").collect::<Vec<&str>>()[1];
                     message
                         .click_button(
                             0,
-                            if fireball_line.starts_with("              ") {
+                            if kraken_line.starts_with("              ") {
                                 2
-                            } else if fireball_line.starts_with("       ") {
+                            } else if kraken_line.starts_with("       ") {
                                 1
                             } else {
                                 0
@@ -266,8 +274,15 @@ pub fn get_commands() -> Vec<Command> {
                                             .click_button(0, random_range(0..3))
                                             .await
                                             .ok();
+
+                                        let updated = updated_message_three.await_update().await?;
+
                                         // end interaction
-                                        updated_message_three.click_button(1, 1).await?;
+                                        if updated.get_component(1, 1).is_some() {
+                                            updated_message_three.click_button(1, 1).await?;
+                                        } else {
+                                            updated_message_three.click_button(0, 2).await?;
+                                        }
                                     } else {
                                         // can't stream
                                         message.click_button(0, 2).await?;
@@ -335,7 +350,7 @@ pub fn get_commands() -> Vec<Command> {
             command: None,
             cooldown: Duration::from_secs(0),
             matcher: |message| {
-                message.is_from_pepe() && message.data.content.starts_with("Remember words order!")
+                message.is_from_pepe() && message.data.content.contains("Remember words order!")
             },
             execute: |message| {
                 Box::pin(async {
@@ -381,7 +396,7 @@ pub fn get_commands() -> Vec<Command> {
                         .content
                         .starts_with(format!("<@!{}>", updated.user.id).as_str())
                     {
-                        info!("trying to solve Emoji Match");
+                        debug!("trying to solve Emoji Match");
                         let mut buttons = updated.data.components[0].components.clone();
                         buttons.extend(updated.data.components[1].components.clone());
                         let pos = buttons
@@ -406,21 +421,127 @@ pub fn get_commands() -> Vec<Command> {
                 Box::pin(async {
                     // Bot can't know if the message is intended for the user, so it just clicks either way
                     let levitate_line = message.data.content.split("\n").collect::<Vec<&str>>()[2];
-                    info!("trying to solve Soccer");
-                    message.click_button(
-                        0,
-                        if levitate_line.starts_with(":levitate:") {
-                            1
-                        } else {
-                            0
-                        },
-                    ).await?;
+                    debug!("trying to solve Soccer");
+                    message
+                        .click_button(
+                            0,
+                            if levitate_line.starts_with(":levitate:") {
+                                1
+                            } else {
+                                0
+                            },
+                        )
+                        .await?;
 
                     Ok(())
                 })
             },
         },
-        // TODO: Color Match
+        Command {
+            // Color Match
+            last_called: None,
+            command: None,
+            cooldown: Duration::from_secs(0),
+            matcher: |message| {
+                message.is_from_pepe() && message.data.content.contains("Color Match")
+            },
+            execute: |message| {
+                Box::pin(async {
+                    // Bot can't know if the message is intended for the user, so it just clicks either way
+                    let lines = message.data.content.split("\n").collect::<Vec<&str>>();
+                    let matches = &mut lines[1..4].iter().map(|line| {
+                        let (color, word) = line.split_once(" ").unwrap();
+                        return ColorMatch {
+                            color: color.to_lowercase().chars().nth(2).unwrap(),
+                            word: word[1..word.len() - 1].to_owned(),
+                        };
+                    });
+
+                    debug!(
+                        "trying to solve Color Match [1], '{}', '{:#?}'",
+                        &message.data.content,
+                        matches
+                    );
+
+                    let updated = message.await_update().await?;
+
+                    debug!(
+                        "trying to solve Color Match [2], '{}'",
+                        &updated.data.content
+                    );
+
+                    if updated
+                        .data
+                        .content
+                        .starts_with(format!("<@!{}>", updated.user.id).as_str())
+                    {
+                        debug!("Color Match is for me [3]");
+
+                        let word = &Regex::new(r"`(\w+)`")
+                            .unwrap()
+                            .captures(&updated.data.content)
+                            .unwrap()[1];
+                        debug!("Color Match the word is [3], {}", &word);
+
+                        let buttons = &message.data.components[0].components;
+                        let color_match = matches
+                            .find(|color_match| color_match.word == word)
+                            .ok_or("could not find color [1]")?;
+                        let index = buttons
+                            .iter()
+                            .position(|button| {
+                                button
+                                    .label
+                                    .as_ref()
+                                    .unwrap()
+                                    .to_lowercase()
+                                    .starts_with(color_match.color)
+                            })
+                            .ok_or("could not find color [2]")?;
+
+                        debug!("Color Match index is [4], {}", &index);
+
+
+                        message.click_button(0, index).await?;
+                    }
+
+                    Ok(())
+                })
+            },
+        },
+        Command {
+            // Dunk the ball
+            last_called: None,
+            command: None,
+            cooldown: Duration::from_secs(0),
+            matcher: |message| {
+                message.is_from_pepe() && message.data.content.contains("Dunk the ball!")
+            },
+            execute: |message| {
+                Box::pin(async {
+                    // Bot can't know if the message is intended for the user, so it just clicks either way
+                    let content = &message.data.content;
+                    let ball_line: &str = content.split("\n").collect::<Vec<&str>>()[2];
+
+                    debug!("trying to solve Dunk the ball");
+
+                    message
+                        .click_button(
+                            0,
+                            if ball_line.starts_with("              ") {
+                                2
+                            } else if ball_line.starts_with("       ") {
+                                1
+                            } else {
+                                0
+                            },
+                        )
+                        .await?;
+
+                    Ok(())
+                })
+            },
+        },
         // Events
         Command {
             // Attack the Boss
@@ -445,9 +566,32 @@ pub fn get_commands() -> Vec<Command> {
                 })
             },
         },
+        Command {
+            // Trivia Night
+            last_called: None,
+            command: None,
+            cooldown: Duration::from_secs(0),
+            matcher: |message| {
+                message.is_from_pepe()
+                    && message.embed_description_contains("You have 15 seconds to answer")
+                    && message.get_component(0, 4).is_some()
+            },
+            execute: |message| {
+                Box::pin(async {
+                    message.click_button(0, 0).await?;
+
+                    Ok(())
+                })
+            },
+        },
     ]
 }
 
 fn random_range(range: Range<usize>) -> usize {
     (rand::random::<f32>() * range.end as f32).floor() as usize + range.start
+}
+
+struct ColorMatch {
+    color: char,
+    word: String,
 }
