@@ -305,13 +305,13 @@ pub fn get_commands() -> Vec<Command> {
             },
         },
         // Work
-        // Command {
-        //     last_called: None,
-        //     command: String::from("pls work"),
-        //     cooldown: Duration::from_secs(3600),
-        //     matcher: |_message| false,
-        //     execute: |_message| Box::pin(async {Ok(())}),
-        // },
+        Command {
+            last_called: None,
+            command: Some(String::from("pls work")),
+            cooldown: Duration::from_secs(3600),
+            matcher: |_message| false,
+            execute: |_message| Box::pin(async {Ok(())}),
+        },
         // Pet
         Command {
             last_called: None,
