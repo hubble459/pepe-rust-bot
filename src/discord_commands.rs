@@ -25,6 +25,49 @@ pub struct Command {
 
 pub fn get_commands() -> Vec<Command> {
     vec![
+        // Auto Accept Incoming Trades From Master
+        Command {
+            last_called: None,
+            command: None,
+            cooldown: Duration::default(),
+            matcher: |message| {
+                message.master_id.is_some()
+                    && message.is_from_pepe()
+                    && message.embed_title_contains("Pending Confirmation")
+                    && message
+                        .data
+                        .content
+                        .starts_with(&format!("<@{}>", message.user.id))
+                    && message.replied_to(&message.master_id.as_ref().unwrap(), "pls trade")
+            },
+            execute: |message| {
+                Box::pin(async {
+                    message.click_button(0, 1).await?;
+                    Ok(())
+                })
+            },
+        },
+        // Auto Accept Trades From Myself
+        Command {
+            last_called: None,
+            command: None,
+            cooldown: Duration::default(),
+            matcher: |message| {
+                message.master_id.is_some()
+                    && message.is_from_pepe()
+                    && message
+                        .data
+                        .content
+                        .starts_with("The timeout for their confirmation is 5 minutes")
+                    && message.replied_to_me("pls trade")
+            },
+            execute: |message| {
+                Box::pin(async {
+                    message.click_button(0, 1).await?;
+                    Ok(())
+                })
+            },
+        },
         // Master Controls
         Command {
             last_called: None,
@@ -310,7 +353,7 @@ pub fn get_commands() -> Vec<Command> {
             command: Some(String::from("pls work")),
             cooldown: Duration::from_secs(3600),
             matcher: |_message| false,
-            execute: |_message| Box::pin(async {Ok(())}),
+            execute: |_message| Box::pin(async { Ok(()) }),
         },
         // Pet
         Command {
@@ -459,8 +502,7 @@ pub fn get_commands() -> Vec<Command> {
 
                     debug!(
                         "trying to solve Color Match [1], '{}', '{:#?}'",
-                        &message.data.content,
-                        matches
+                        &message.data.content, matches
                     );
 
                     let updated = message.await_update().await?;
@@ -500,7 +542,6 @@ pub fn get_commands() -> Vec<Command> {
                             .ok_or("could not find color [2]")?;
 
                         debug!("Color Match index is [4], {}", &index);
-
 
                         message.click_button(0, index).await?;
                     }

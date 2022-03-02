@@ -56,9 +56,13 @@ impl DiscordMessage {
         }
     }
 
-    pub fn replied_to_me(&self, content: &str) -> bool {
+    pub fn replied_to_me(&self, starts_with: &str) -> bool {
+        return self.replied_to(&self.user.id, starts_with);
+    }
+
+    pub fn replied_to(&self, user_id: &str, starts_with: &str) -> bool {
         match &self.data.referenced_message {
-            Some(ref_msg) => ref_msg.author.id == self.user.id && ref_msg.content == content,
+            Some(ref_msg) => ref_msg.author.id == user_id && ref_msg.content.starts_with(starts_with),
             None => false,
         }
     }
@@ -68,7 +72,8 @@ impl DiscordMessage {
     }
 
     pub fn is_from_master(&self) -> bool {
-        return self.master_id.is_some() && &self.data.author.id == self.master_id.as_ref().unwrap();
+        return self.master_id.is_some()
+            && &self.data.author.id == self.master_id.as_ref().unwrap();
     }
 
     pub fn is_from_pepe(&self) -> bool {

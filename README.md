@@ -18,8 +18,8 @@ pepe@dank:~$ chmod +x pepe-bot
 pepe@dank:~$ ./pepe-bot -h
 ...omitted
 pepe@dank:~$ ./pepe-bot -V
-pepe-bot 1.1
-pepe@dank:~$ ./pepe-bot -m 000000000000000000 -t nHSdck.qwef-2c.wknefjqj -v
+pepe-bot 1.2
+pepe@dank:~$ ./pepe-bot -m 000000000000000000 -t nHSdck.qwef-2c.wknefjqj
 [running output]
 ```
 
