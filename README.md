@@ -13,11 +13,13 @@ This bot is very simple to use.
 Example
 
 ```console
-pepe@dank:~$ pepe-bot -h
+pepe@dank:~$ chmod +x pepe-bot
+
+pepe@dank:~$ ./pepe-bot -h
 ...omitted
-pepe@dank:~$ pepe-bot -V
+pepe@dank:~$ ./pepe-bot -V
 pepe-bot 1.1
-pepe@dank:~$ pepe-bot -m 000000000000000000 -t nHSdck.qwef-2c.wknefjqj -vvv
+pepe@dank:~$ ./pepe-bot -m 000000000000000000 -t nHSdck.qwef-2c.wknefjqj -v
 [running output]
 ```
 
@@ -32,18 +34,14 @@ To stop it you can use `@[bot_name] stop`.
 The easiest way is to have a .env file containing your discord user token and master account id.
 
 ```properties
-
 TOKEN=<discord user token>
 MASTER_ID=<user id of master>
-
 ```
 
 Run the program with the following command
 
 ```apache
-
 cargo run
-
 ```
 
 ## Build
@@ -51,7 +49,5 @@ cargo run
 Build for your own platform.
 
 ```apache
-
 cargo build [--release]
-
 ```
