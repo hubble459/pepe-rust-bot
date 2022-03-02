@@ -7,21 +7,22 @@ mod model;
 use crate::discord_client::connect;
 
 use clap::Parser;
+use clap_verbosity_flag::InfoLevel;
 
 /// Automate Dank Memer
 #[derive(Parser, Debug)]
 #[clap(author = "meep334 <geraldd459@gmail.com>", version = "1.0", about = "Automate the Dank Memer game by using a discord self bot", long_about = None)]
 struct Args {
     #[clap(flatten)]
-    verbose: clap_verbosity_flag::Verbosity,
+    verbose: clap_verbosity_flag::Verbosity<InfoLevel>,
 
     /// Token of the discord account to use
     #[clap(short, long, env)]
     token: String,
 
     /// The master of this bot (can control the bot)
-    #[clap(short, long, env, default_value="")]
-    master_id: String,
+    #[clap(short, long, env)]
+    master_id: Option<String>,
 
     /// The default channel in which the bot runs
     #[clap(short, long, env)]

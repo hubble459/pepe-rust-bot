@@ -7,9 +7,9 @@ use crate::model::*;
 
 use async_recursion::async_recursion;
 use futures::lock::Mutex;
-use futures::pin_mut;
 use futures::SinkExt;
 use futures::StreamExt;
+use log::warn;
 use rand::Rng;
 use reqwest::header::HeaderMap;
 use reqwest::Client;
@@ -31,7 +31,7 @@ fn make_http_client(token: &String) -> Client {
 }
 
 #[async_recursion]
-pub async fn connect(token: String, master_id: String, channel_id: Option<String>) {
+pub async fn connect(token: String, master_id: Option<String>, channel_id: Option<String>) {
     let (stream, _) = tokio_tungstenite::connect_async_tls_with_config(
         "wss://gateway.discord.gg/?v=9&encoding=json",
         None,
@@ -42,17 +42,20 @@ pub async fn connect(token: String, master_id: String, channel_id: Option<String
 
     info!("Connected to the Discord WebSocket");
 
+    if master_id.is_none() {
+        warn!("Does not have a master!");
+        warn!("Will only listen to self");
+    }
+
     let (sink, stream) = stream.split();
     let (message_update_sender, message_update_receiver) =
         async_channel::unbounded::<DiscordMessage>();
     let (master_command_sender, master_command_receiver) =
         async_channel::unbounded::<MasterCommand>();
 
-    let shared_channel_id: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(channel_id.clone()));
-    let shared_channel_id_clone = shared_channel_id.clone();
     let shared_client: SharedDiscordClient = Arc::new(Mutex::new(DiscordClient {
         http: make_http_client(&token),
-        master_id: master_id.to_string(),
+        master_id: master_id.clone(),
         session_id: "".to_owned(),
         token: token.to_string(),
         user: None,
@@ -64,8 +67,13 @@ pub async fn connect(token: String, master_id: String, channel_id: Option<String
     }));
     let shared_client_clone = shared_client.clone();
 
+    let shared_channel_id: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(channel_id.clone()));
+    let shared_channel_id_clone = shared_channel_id.clone();
+
     let command_loop = tokio::spawn(async move {
         let mut tokio_thread: Option<JoinHandle<()>> = None;
+
+        info!("Listening for Master Commands");
 
         loop {
             let master_command = master_command_receiver.recv().await.unwrap();
@@ -176,12 +184,15 @@ pub async fn connect(token: String, master_id: String, channel_id: Option<String
             .unwrap();
     }
 
-    pin_mut!(message_handler);
-    // pin_mut!(command_loop);
-    futures::future::select(message_handler, command_loop).await;
-    // message_handler.await;
+    // pin_mut!(message_handler);
+    // futures::future::select(message_handler, command_loop);
+
+    message_handler.await;
 
     info!("Disconnected from the Discord Gateway");
+    info!("Closing threads");
+    command_loop.abort();
+
     info!("Trying to reconnect...");
 
     // Disconnected so try to reconnect
@@ -272,6 +283,9 @@ async fn handle_ws_package(
                     // std::fs::write("data/ready.json", json_data.to_string()).expect("Unable to write file");
 
                     let ready: ReadyData = serde_json::from_value(json_data).unwrap();
+
+                    info!("Logged in as {}", &ready.user.username);
+
                     let arc = shared_client.clone();
                     let mut client = arc.lock().await;
                     client.session_id = ready.session_id;

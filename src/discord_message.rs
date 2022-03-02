@@ -13,7 +13,7 @@ pub struct DiscordClient {
     pub user: Option<ReadyDataUser>,
     pub sequence: u64,
     pub session_id: String,
-    pub master_id: String,
+    pub master_id: Option<String>,
     pub http: Client,
     pub message_update_receiver: async_channel::Receiver<DiscordMessage>,
     pub websocket_writer: futures::stream::SplitSink<
@@ -29,7 +29,7 @@ pub struct DiscordClient {
 pub type SharedDiscordClient = Arc<Mutex<DiscordClient>>;
 
 pub struct DiscordMessage {
-    pub master_id: String,
+    pub master_id: Option<String>,
     pub user: ReadyDataUser,
     pub data: MessageCreateData,
     pub client: SharedDiscordClient,
@@ -68,7 +68,7 @@ impl DiscordMessage {
     }
 
     pub fn is_from_master(&self) -> bool {
-        return self.data.author.id == self.master_id;
+        return self.master_id.is_some() && &self.data.author.id == self.master_id.as_ref().unwrap();
     }
 
     pub fn is_from_pepe(&self) -> bool {
@@ -265,33 +265,33 @@ impl DiscordMessage {
         return Ok(self.new_from(serde_json::from_str(&response.text().await?)?));
     }
 
-    pub async fn edit(&self, content: &str) -> Result<DiscordMessage, Box<dyn std::error::Error>> {
-        if self.data.author.id != self.client.clone().lock().await.user.as_ref().unwrap().id {
-            panic!("Tried to edit a message that is not yours");
-        }
+    // pub async fn edit(&self, content: &str) -> Result<DiscordMessage, Box<dyn std::error::Error>> {
+    //     if self.data.author.id != self.client.clone().lock().await.user.as_ref().unwrap().id {
+    //         panic!("Tried to edit a message that is not yours");
+    //     }
 
-        let response = self
-            .client
-            .clone()
-            .lock()
-            .await
-            .http
-            .patch(format!(
-                "https://discord.com/api/v9/channels/{}/messages/{}",
-                self.data.channel_id, self.data.id
-            ))
-            .body(
-                serde_json::to_string(&DiscordMessagePayload {
-                    content: content.to_string(),
-                    message_reference: None,
-                })
-                .unwrap(),
-            )
-            .send()
-            .await?;
+    //     let response = self
+    //         .client
+    //         .clone()
+    //         .lock()
+    //         .await
+    //         .http
+    //         .patch(format!(
+    //             "https://discord.com/api/v9/channels/{}/messages/{}",
+    //             self.data.channel_id, self.data.id
+    //         ))
+    //         .body(
+    //             serde_json::to_string(&DiscordMessagePayload {
+    //                 content: content.to_string(),
+    //                 message_reference: None,
+    //             })
+    //             .unwrap(),
+    //         )
+    //         .send()
+    //         .await?;
 
-        return Ok(self.new_from(serde_json::from_str(&response.text().await?)?));
-    }
+    //     return Ok(self.new_from(serde_json::from_str(&response.text().await?)?));
+    // }
 
     pub async fn await_update(&self) -> Result<DiscordMessage, Box<dyn std::error::Error>> {
         let receiver = self

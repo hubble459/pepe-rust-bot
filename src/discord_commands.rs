@@ -330,7 +330,7 @@ pub fn get_commands() -> Vec<Command> {
         },
         // ## Mini Games ##
         Command {
-            // Remember Words Order
+            // Repeat Words Order
             last_called: None,
             command: None,
             cooldown: Duration::from_secs(0),
